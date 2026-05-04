@@ -1,9 +1,9 @@
-import crypto from 'crypto';
 import { cookies } from 'next/headers';
+import crypto from 'crypto';
 
 const SECRET = process.env.AUTH_SECRET || 'fallback-change-me';
 const COOKIE_NAME = 'tnzf_auth';
-const SESSION_HOURS = 24 * 7; // 1 week
+const SESSION_HOURS = 24 * 7;
 
 function sign(value: string): string {
   return crypto.createHmac('sha256', SECRET).update(value).digest('hex');
@@ -27,11 +27,6 @@ export function verifyAuthToken(token: string | undefined): boolean {
   if (marker !== 'valid') return false;
   const expiry = parseInt(expiryStr, 10);
   return Number.isFinite(expiry) && expiry > Date.now();
-}
-
-export function isAuthed(): boolean {
-  const token = cookies().get(COOKIE_NAME)?.value;
-  return verifyAuthToken(token);
 }
 
 export const AUTH_COOKIE_NAME = COOKIE_NAME;
