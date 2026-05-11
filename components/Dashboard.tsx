@@ -5,7 +5,7 @@ import { Search, Flag, LogOut, MessageCircle, Wifi, WifiOff, ChevronLeft } from 
 
 type ConvSummary = {
   phone: string;
-  last_message: string;
+  last_message: string | null;
   last_direction: 'Human' | 'AI';
   last_at: string;
   flagged: boolean;
@@ -17,7 +17,7 @@ type Message = {
   created_at: string;
   phone: string;
   direction: 'Human' | 'AI';
-  message: string;
+  message: string | null;
   notes: string | null;
   review_flagged?: boolean | null;
 };
@@ -153,11 +153,11 @@ export default function Dashboard() {
     let list = conversations;
     if (search.trim()) {
       const q = search.trim().toLowerCase();
-      list = list.filter(
-        (c) =>
-          c.phone.toLowerCase().includes(q) ||
-          c.last_message.toLowerCase().includes(q)
-      );
+      list = list.filter((c) => {
+        const phone = (c.phone || '').toLowerCase();
+        const msg = (c.last_message || '').toLowerCase();
+        return phone.includes(q) || msg.includes(q);
+      });
     }
     if (showFlaggedOnly) {
       list = list.filter((c) => c.flagged);
@@ -346,7 +346,7 @@ export default function Dashboard() {
                           </span>
                           <span className="text-ink-300">·</span>
                           <p className="text-xs text-ink-500 truncate flex-1 rtl-aware">
-                            {c.last_message}
+                            {c.last_message || <span className="italic text-ink-400">(no text)</span>}
                           </p>
                         </div>
                         <div className="text-[10px] text-ink-400 mt-1 font-mono">
@@ -407,24 +407,30 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                <button
-                  onClick={() =>
-                    selectedConv &&
-                    toggleFlag(selectedConv.phone, selectedConv.flagged)
-                  }
-                  className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border transition ${
-                    selectedConv?.flagged
-                      ? 'bg-flag/10 text-flag border-flag/30 hover:bg-flag/15'
-                      : 'text-ink-500 border-ink-200 hover:border-flag/40 hover:text-flag'
-                  }`}
-                >
-                  <Flag
-                    className={`w-3.5 h-3.5 ${
-                      selectedConv?.flagged ? 'fill-flag/30' : ''
+                <div className="flex flex-col items-end gap-1">
+                  <button
+                    onClick={() =>
+                      selectedConv &&
+                      toggleFlag(selectedConv.phone, selectedConv.flagged)
+                    }
+                    title="Mandatory: flag any conversation where the AI failed, gave wrong info, or needs review. Flagged conversations remain visible until you unflag them."
+                    className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border transition ${
+                      selectedConv?.flagged
+                        ? 'bg-flag/10 text-flag border-flag/30 hover:bg-flag/15'
+                        : 'text-ink-500 border-ink-200 hover:border-flag/40 hover:text-flag'
                     }`}
-                  />
-                  {selectedConv?.flagged ? 'Flagged' : 'Flag for review'}
-                </button>
+                  >
+                    <Flag
+                      className={`w-3.5 h-3.5 ${
+                        selectedConv?.flagged ? 'fill-flag/30' : ''
+                      }`}
+                    />
+                    {selectedConv?.flagged ? 'Flagged' : 'Flag for review'}
+                  </button>
+                  <span className="text-[10px] text-ink-400 italic">
+                    Mandatory · flag any AI mistake or issue
+                  </span>
+                </div>
               </div>
 
               {/* Messages */}
@@ -470,7 +476,7 @@ export default function Dashboard() {
                                     {isAI ? 'AI · Mohammed' : 'Customer'}
                                   </div>
                                   <div className="text-[14px] leading-relaxed whitespace-pre-wrap break-words rtl-aware">
-                                    {m.message}
+                                    {m.message || <span className="italic text-ink-400">(empty message)</span>}
                                   </div>
                                   <div className="text-[10px] text-ink-400 mt-1 font-mono text-right">
                                     {formatTime(m.created_at)}
