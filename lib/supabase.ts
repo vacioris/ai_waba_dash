@@ -21,4 +21,5 @@ export type Conversation = {
   message: string;
   notes: string | null;
   review_flagged?: boolean | null;
+  flag_reason?: string | null;
 };
