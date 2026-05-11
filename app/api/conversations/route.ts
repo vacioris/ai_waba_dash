@@ -33,6 +33,7 @@ export async function GET(req: NextRequest) {
     last_direction: 'Human' | 'AI';
     last_at: string;
     flagged: boolean;
+    flag_reason: string | null;
     message_count: number;
   }>();
 
@@ -45,11 +46,17 @@ export async function GET(req: NextRequest) {
         last_direction: m.direction,
         last_at: m.created_at,
         flagged: !!m.review_flagged,
+        flag_reason: m.flag_reason ?? null,
         message_count: 1,
       });
     } else {
       existing.message_count += 1;
       if (m.review_flagged) existing.flagged = true;
+      // Take the first non-empty reason we see (rows are ordered newest first,
+      // so this gives us the most recently saved reason)
+      if (!existing.flag_reason && m.flag_reason) {
+        existing.flag_reason = m.flag_reason;
+      }
     }
   }
 
