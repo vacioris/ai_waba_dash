@@ -9,6 +9,7 @@ type ConvSummary = {
   last_direction: 'Human' | 'AI';
   last_at: string;
   flagged: boolean;
+  flag_reason?: string | null;
   message_count: number;
 };
 
@@ -70,6 +71,10 @@ export default function Dashboard() {
   const [loadingList, setLoadingList] = useState(true);
   const [loadingThread, setLoadingThread] = useState(false);
   const [mobileShowThread, setMobileShowThread] = useState(false);
+  // Flag modal state
+  const [flagModalOpen, setFlagModalOpen] = useState(false);
+  const [flagReasonInput, setFlagReasonInput] = useState('');
+  const [savingFlag, setSavingFlag] = useState(false);
   const threadRef = useRef<HTMLDivElement>(null);
 
   // --- Initial list load
@@ -167,25 +172,74 @@ export default function Dashboard() {
 
   const selectedConv = conversations.find((c) => c.phone === selected);
 
-  // --- Toggle flag
-  async function toggleFlag(phone: string, currentlyFlagged: boolean) {
-    // Optimistic update
+  // --- Handle flag button click
+  // If currently unflagged: open modal to collect reason
+  // If currently flagged: unflag directly (no modal)
+  function handleFlagClick() {
+    if (!selectedConv) return;
+    if (selectedConv.flagged) {
+      // Already flagged → unflag immediately
+      unflagConversation(selectedConv.phone);
+    } else {
+      // Open modal to capture reason
+      setFlagReasonInput('');
+      setFlagModalOpen(true);
+    }
+  }
+
+  async function unflagConversation(phone: string) {
     setConversations((prev) =>
-      prev.map((c) => (c.phone === phone ? { ...c, flagged: !currentlyFlagged } : c))
+      prev.map((c) =>
+        c.phone === phone ? { ...c, flagged: false, flag_reason: null } : c
+      )
     );
     try {
       await fetch('/api/flag', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, flagged: !currentlyFlagged }),
+        body: JSON.stringify({ phone, flagged: false }),
       });
     } catch {
-      // revert on failure
+      setConversations((prev) =>
+        prev.map((c) => (c.phone === phone ? { ...c, flagged: true } : c))
+      );
+    }
+  }
+
+  async function submitFlag() {
+    if (!selectedConv) return;
+    const reason = flagReasonInput.trim();
+    if (!reason) return; // Reason is required
+
+    setSavingFlag(true);
+    // Optimistic
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.phone === selectedConv.phone
+          ? { ...c, flagged: true, flag_reason: reason }
+          : c
+      )
+    );
+    try {
+      const res = await fetch('/api/flag', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: selectedConv.phone, flagged: true, reason }),
+      });
+      if (!res.ok) throw new Error('save failed');
+      setFlagModalOpen(false);
+      setFlagReasonInput('');
+    } catch {
+      // Revert on failure
       setConversations((prev) =>
         prev.map((c) =>
-          c.phone === phone ? { ...c, flagged: currentlyFlagged } : c
+          c.phone === selectedConv.phone
+            ? { ...c, flagged: false, flag_reason: null }
+            : c
         )
       );
+    } finally {
+      setSavingFlag(false);
     }
   }
 
@@ -409,10 +463,7 @@ export default function Dashboard() {
 
                 <div className="flex flex-col items-end gap-1">
                   <button
-                    onClick={() =>
-                      selectedConv &&
-                      toggleFlag(selectedConv.phone, selectedConv.flagged)
-                    }
+                    onClick={handleFlagClick}
                     title="Mandatory: flag any conversation where the AI failed, gave wrong info, or needs review. Flagged conversations remain visible until you unflag them."
                     className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border transition ${
                       selectedConv?.flagged
@@ -435,6 +486,23 @@ export default function Dashboard() {
 
               {/* Messages */}
               <div ref={threadRef} className="flex-1 overflow-y-auto px-4 md:px-8 py-6">
+                {selectedConv?.flagged && selectedConv.flag_reason && (
+                  <div className="max-w-3xl mx-auto mb-4">
+                    <div className="bg-flag/5 border border-flag/30 rounded-lg px-4 py-3">
+                      <div className="flex items-start gap-2">
+                        <Flag className="w-3.5 h-3.5 text-flag fill-flag/30 mt-0.5 flex-shrink-0" />
+                        <div className="min-w-0">
+                          <div className="text-[10px] uppercase tracking-wider text-flag font-medium mb-1">
+                            Flag reason
+                          </div>
+                          <div className="text-sm text-ink-700 whitespace-pre-wrap break-words">
+                            {selectedConv.flag_reason}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {loadingThread ? (
                   <div className="text-center text-sm text-ink-400 py-12">
                     Loading conversation…
@@ -495,6 +563,72 @@ export default function Dashboard() {
           )}
         </main>
       </div>
+
+      {/* Flag Reason Modal */}
+      {flagModalOpen && selectedConv && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-4 animate-fade-in"
+          onClick={(e) => {
+            // Close on backdrop click
+            if (e.target === e.currentTarget) {
+              if (!savingFlag) setFlagModalOpen(false);
+            }
+          }}
+        >
+          <div className="absolute inset-0 bg-ink-900/40 backdrop-blur-sm" />
+          <div className="relative bg-paper rounded-2xl border border-ink-200 shadow-xl max-w-md w-full p-6 animate-slide-in">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-flag/10 flex items-center justify-center flex-shrink-0">
+                <Flag className="w-5 h-5 text-flag fill-flag/30" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="font-display text-lg text-ink-800 leading-tight">
+                  Flag this conversation
+                </h2>
+                <p className="text-xs text-ink-500 mt-0.5 font-mono truncate">
+                  {selectedConv.phone}
+                </p>
+              </div>
+            </div>
+
+            <label className="block">
+              <span className="text-xs uppercase tracking-wider text-ink-500 font-medium">
+                What went wrong? <span className="text-flag">*</span>
+              </span>
+              <textarea
+                value={flagReasonInput}
+                onChange={(e) => setFlagReasonInput(e.target.value)}
+                autoFocus
+                rows={4}
+                placeholder="e.g. AI repeated greeting after customer answered, gave wrong price, didn't recognize service request, etc."
+                className="mt-2 w-full px-3 py-2.5 bg-ink-50 border border-ink-200 rounded-lg text-sm text-ink-800 focus:outline-none focus:border-flag focus:ring-2 focus:ring-flag/10 transition resize-none"
+              />
+              <span className="block text-[10px] text-ink-400 mt-1">
+                Be specific — this helps improve the AI later.
+              </span>
+            </label>
+
+            <div className="flex items-center justify-end gap-2 mt-6">
+              <button
+                onClick={() => {
+                  if (!savingFlag) setFlagModalOpen(false);
+                }}
+                disabled={savingFlag}
+                className="px-4 py-2 text-sm text-ink-600 hover:text-ink-800 hover:bg-ink-100 rounded-md transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitFlag}
+                disabled={savingFlag || !flagReasonInput.trim()}
+                className="px-4 py-2 text-sm bg-flag/90 hover:bg-flag text-white rounded-md font-medium transition disabled:bg-ink-300 disabled:cursor-not-allowed"
+              >
+                {savingFlag ? 'Saving…' : 'Save & flag'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
